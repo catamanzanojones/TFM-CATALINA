@@ -1,0 +1,26 @@
+# --- Datos con copyright y artefactos generados ---
+data/raw/
+storage/
+# Permitimos que los .gitkeep mantengan las carpetas vacías visibles en git
+!data/raw/.gitkeep
+!storage/.gitkeep
+
+# --- Secretos ---
+.env
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Sistema operativo / editores ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,23 @@
+# Requisitos — se añaden por módulo, a medida que avanzan los días.
+# NO instalamos todo de golpe: cada día añade solo lo que usa.
+
+# --- Día 1: ingesta y punto de control de extracción ---
+docling          # PDF -> Markdown (solo conversión, se ejecuta una vez)
+pypdf            # extracción alternativa, solo para el punto de control comparativo
+
+# --- Día 2+ (pendiente de añadir cuando toque) ---
+# google-genai            # cliente oficial Gemini (LLM + embeddings)
+# faiss-cpu               # vector store local
+# python-dotenv           # cargar .env
+# numpy                   # vectores (el coseno "a mano" NO lo usa, el resto sí)
+
+# --- Alternativa si falla la cuota de Gemini (Plan B de infraestructura) ---
+# groq                    # LLM Llama vía Groq
+# sentence-transformers   # embeddings en local
+
+# --- Día 5: evaluación ---
+# ragas                   # métricas RAG
+# anthropic               # solo comparación opcional con Claude
+
+# --- Notebook ---
+# jupyter
