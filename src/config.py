@@ -5,8 +5,8 @@ Todo lo que depende del documento concreto (nombre para las citas, páginas que
 forman el corpus, perfil tipográfico) vive aquí, en DOCUMENTOS. El resto del
 código es genérico: para cambiar de dominio basta con cambiar este archivo.
 
-Los modelos de Gemini se añadirán el día 2, tras verificar cuáles están
-vigentes en el tier gratuito.
+Los modelos de Gemini se verificaron el 16/10/2026 en la documentación oficial
+(ai.google.dev): vigentes y con tier gratuito.
 """
 
 from pathlib import Path
@@ -52,3 +52,22 @@ CHUNK_TAMANO_MIN = 300    # secciones más cortas se unen a la siguiente
 # --- Chunking de tamaño fijo (baseline para el experimento P1) ---
 CHUNK_FIJO_TAMANO = 1000  # caracteres
 CHUNK_FIJO_OVERLAP = 200  # caracteres
+
+# --- Modelos (Google Gemini, tier gratuito) ---
+MODELO_LLM = "gemini-3.8-flash"               # generación (día 3)
+MODELO_LLM_LIGERO = "gemini-3.5-flash-lite"   # alternativa si aprieta la cuota
+MODELO_EMBEDDINGS = "gemini-embedding-2"
+DIMENSION_EMBEDDINGS = 768   # 128-3072; 768 es una de las tallas recomendadas (Matryoshka)
+
+# gemini-embedding-2 no tiene parámetro task_type: la tarea se indica con un
+# prefijo en el propio texto (formato de la documentación oficial).
+PREFIJO_CONSULTA = "task: search result | query: {texto}"
+PREFIJO_DOCUMENTO = "title: {titulo} | text: {texto}"
+
+# --- Llamadas a la API ---
+EMBEDDINGS_POR_LOTE = 50   # textos por llamada
+REINTENTOS_MAX = 5         # ante error de cuota (429) o del servidor (5xx)
+ESPERA_INICIAL = 10        # segundos; se duplica en cada reintento
+
+# --- Archivos generados (en storage/, fuera de git) ---
+CACHE_EMBEDDINGS = CARPETA_STORAGE / "cache_embeddings.json"

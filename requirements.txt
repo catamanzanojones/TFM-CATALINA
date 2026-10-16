@@ -5,11 +5,11 @@
 docling          # PDF -> Markdown (solo conversión, se ejecuta una vez)
 pypdf            # extracción alternativa, solo para el punto de control comparativo
 
-# --- Día 2+ (pendiente de añadir cuando toque) ---
-# google-genai            # cliente oficial Gemini (LLM + embeddings)
-# faiss-cpu               # vector store local
-# python-dotenv           # cargar .env
-# numpy                   # vectores (el coseno "a mano" NO lo usa, el resto sí)
+# --- Día 2: embeddings, coseno e índice ---
+google-genai     # cliente oficial de Gemini (embeddings y, el día 3, generación)
+python-dotenv    # cargar las claves desde .env
+numpy            # vectores (el coseno "a mano" NO lo usa; FAISS sí)
+faiss-cpu        # vector store local (IndexFlatIP)
 
 # --- Alternativa si falla la cuota de Gemini (Plan B de infraestructura) ---
 # groq                    # LLM Llama vía Groq

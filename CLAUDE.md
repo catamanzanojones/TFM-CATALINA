@@ -43,7 +43,10 @@ Plazo: 1 semana. Idioma de código, comentarios y borradores técnicos: **españ
   ruta de títulos. El chunker de tamaño fijo puro se conserva como baseline
   (experimento del día 6). NO usar el chunker de Docling.
 - **LLM y embeddings**: Google Gemini API, tier gratuito, misma API key.
-  Verificar modelos vigentes del tier gratuito antes de fijarlos en `config.py`.
+  Modelos verificados el 16/10/2026 y fijados en `config.py`: generación
+  `gemini-3.8-flash` (alternativa `gemini-3.5-flash-lite`), embeddings
+  `gemini-embedding-2` a 768 dimensiones, con prefijos de tarea (no tiene
+  `task_type`); el `title` de cada chunk es su ruta de títulos.
   - Alternativa si hay problemas de cuota: Groq (Llama) + sentence-transformers
     en local.
 - **Caché de embeddings** en disco (no repetir llamadas a la API).

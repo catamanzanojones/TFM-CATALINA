@@ -275,6 +275,15 @@ mitad de frase (ver E8).
    títulos seguida del texto, para que el vector "sepa" de qué capítulo y
    sección habla el fragmento.
 
+**Justificación del tamaño máximo** (ver E4; decisión del día 1 que sustituye
+al tamaño fijo puro previsto inicialmente, que se conserva como baseline): con
+1500 caracteres habría que partir el 31 % de las secciones (62 % del texto),
+perdiendo la ventaja de cortar por títulos; con 3000, solo el 7 % (y menos aún
+tras añadir el nivel 5). Como cada sección trata un único tema, se pueden
+permitir chunks más grandes sin diluir el embedding. 3000 caracteres son unos
+800 tokens, muy por debajo del límite de `gemini-embedding-2` (8.192 tokens), y
+sin problema para el contexto del LLM (5 chunks ≈ 4000 tokens).
+
 **Regla de la ruta**: la ruta de un chunk es la de la sección más profunda que
 contiene todo su texto. Si se unen secciones hermanas, queda la del padre común
 (no se atribuye el chunk a una sola de ellas). Las secciones que solo aportan
@@ -314,6 +323,83 @@ chunk de "Puntería certera" entregaría "Celeridad > Nivel 4" completo, 1.212
 car.; Celeridad entera, 10.406 car., no cabe). Si varios chunks comparten
 ancestro, se envía una sola vez. Se implementará con un interruptor
 (`EXPANDIR_CONTEXTO`) para evaluarlo (experimento P4). Datos en E6.
+
+## Día 2 — Embeddings, coseno e índice
+
+### Elección de modelos (verificada el 16/10/2026)
+Fuentes: documentación oficial de la Gemini API (páginas *Models*, *Pricing*,
+*Embeddings* y *Rate limits*, actualizadas el 13-15/10/2026). Prueba de humo
+con la clave del proyecto: los tres modelos aparecen disponibles.
+
+| Uso | Modelo | Motivo |
+|---|---|---|
+| Generación | `gemini-3.8-flash` | Estable, el Flash más reciente, recomendado para proyectos nuevos, con tier gratuito |
+| Generación (alternativa) | `gemini-3.5-flash-lite` | El más rápido y barato; reserva si aprieta la cuota (p. ej. RAGAS) |
+| Embeddings | `gemini-embedding-2` | Actual y recomendado, gratuito, hasta 8.192 tokens por texto |
+
+Descartados: Gemini 4 Argon y 3.1 Pro (sin tier gratuito); familia 2.5 (acceso
+limitado a quien ya la usaba); `gemini-embedding-001` (anterior, 2.048 tokens).
+
+**Dimensión: 768.** `gemini-embedding-2` produce 3072 números por defecto, pero
+está entrenado con *Matryoshka Representation Learning*: los primeros números
+concentran la información más importante, de modo que se puede pedir un vector
+más corto (128-3072) que sigue funcionando. 768 es una de las tallas
+recomendadas: calidad muy cercana a 3072, caché e índice 4 veces más pequeños y
+el mismo coste por llamada (se paga por texto de entrada, no por dimensión). Con
+este corpus la diferencia práctica es mínima (experimento opcional P5).
+
+**Consideración**: en el tier gratuito Google puede usar el contenido enviado
+para mejorar sus productos; se envía texto de un libro con copyright (a
+mencionar en la memoria como limitación / consideración ética).
+
+### Cliente de modelos (`src/llm_clients.py`)
+Único punto de acceso a la API (el resto del código no conoce el proveedor; un
+cambio a Groq + sentence-transformers solo tocaría este archivo). Lee la clave
+de `.env`. Las llamadas pasan por `con_reintentos`: ante un error de cuota (429)
+o del servidor (5xx) espera y reintenta con **espera exponencial** (10, 20, 40 s
+...; hasta 5 intentos). Embeddings en lotes de 50 textos por llamada, cada texto
+en su propio `Content` (si no, la API devuelve un único vector conjunto).
+
+### Embeddings y caché (`src/embeddings/embedder.py`)
+`gemini-embedding-2` no tiene parámetro `task_type`: la tarea se indica con un
+prefijo en el texto, con el formato de la documentación oficial:
+- pregunta: `task: search result | query: {pregunta}`
+- chunk: `title: {documento > ruta de títulos} | text: {texto}`
+
+**Decisión**: el `title` de cada chunk es su ruta de títulos precedida del
+nombre del documento (este último no aporta nada con un solo libro, pero sí en
+el Plan B con varios reglamentos). Así el vector incorpora el contexto
+jerárquico decidido el día 1.
+
+**Caché en disco** (`storage/cache_embeddings.json`): diccionario
+`{clave: vector}` con clave = SHA-256 de (modelo, dimensión, texto formateado).
+Si cambia cualquiera de los tres se recalcula; si no, nunca se repite una
+llamada. Se guarda tras cada lote para no perder lo calculado si la API falla a
+mitad. Tamaño con 327 vectores: 3,4 MB.
+
+### Índice vectorial (`src/vectorstore/faiss_store.py`)
+`faiss.IndexFlatIP`: producto escalar exacto contra todos los vectores (sin
+aproximaciones; con unos cientos de chunks es instantáneo). Los vectores se
+normalizan siempre (`faiss.normalize_L2`) antes de añadir y de buscar, aunque
+`gemini-embedding-2` ya los devuelva con norma 1: con norma 1 el producto
+escalar es la similitud coseno, y así no se depende del modelo. Se guardan en
+`storage/`: el índice (`indice_estructural.faiss`), los chunks con sus
+metadatos (`indice_estructural.json`) y el almacén de secciones para la
+expansión al padre (`secciones_estructural.json`).
+
+**Resultado**: 324 vectores de dimensión 768; construcción en ~3 min por los
+límites de cuota (ver E11).
+
+### Coseno a mano (`src/retrieval/cosine_manual.py`)
+Producto escalar, norma y coseno en Python puro (bucles, sin numpy):
+`cos(a, b) = a·b / (|a|·|b|)`. Dos partes:
+1. **Ejemplo de juguete** (3 dimensiones), calculado paso a paso con
+   a = (1, 2, 3): misma dirección b = 2a → 1; perpendicular c = (−2, 1, 0) → 0;
+   opuesto d = −a → −1. Muestra además por qué hay que normalizar: el producto
+   escalar a·b = 28 es mayor que a·a = 14 aunque b tenga el mismo significado
+   (dirección) que a; el coseno da 1 en ambos casos.
+2. **Casos reales**: 3 preguntas (una por capítulo), coseno a mano contra los
+   324 chunks frente a `IndiceVectorial.buscar` (FAISS). Resultados en E10.
 
 ---
 
@@ -439,6 +525,39 @@ página (eliminadas a propósito).
 Analizado y descartado: unir automáticamente párrafos partidos por un salto de
 columna (15 casos, casi todos tablas o listas).
 
+**E9 — Prueba de humo de embeddings y anisotropía** (día 2). Tres textos
+embebidos con `gemini-embedding-2` a 768 dimensiones: dimensión 768 y norma
+1,000000 en los tres (el modelo ya normaliza). Coseno de la pregunta "¿Cuántos
+puntos de Experiencia cuesta subir un Atributo?" con un fragmento relevante
+(costes de rasgos): **0,786**; con uno no relevante (Celeridad nivel 4):
+**0,614**. Observación: incluso un texto sin relación tiene coseno alto. Es
+habitual en modelos de embeddings (los vectores no se reparten por todas las
+direcciones, "anisotropía"): lo que importa es el **orden** de las
+puntuaciones, no su valor absoluto. Relevante para el router del día 4 (un
+umbral fijo de similitud habrá que calibrarlo con datos).
+
+**E10 — Coseno a mano vs. FAISS** (día 2). 3 preguntas, top-3 contra los 324
+chunks estructurales:
+
+| Pregunta | Top-1 (coseno) | ¿Mismo orden a mano y en FAISS? |
+|---|---|---|
+| ¿Cuántos puntos de Experiencia cuesta aumentar un Atributo? | Mar de tiempo, pág. 151 (0,76556), contiene la tabla "Costes de rasgos" | Sí (3/3) |
+| ¿Qué hace el poder Puntería certera de Celeridad? | Nivel 4 > Puntería certera, pág. 254 (0,81430) | Sí (3/3) |
+| ¿Qué ocurre si saco un crítico en una tirada? | Resultados de las tiradas, pág. 120 (0,76722), contiene "Críticos" | Sí (3/3) |
+
+Mismos chunks y mismo orden en 9 de 9 posiciones; diferencia máxima entre
+puntuaciones: **1,04·10⁻⁷** (FAISS usa float32 y Python float64). Conclusión:
+IndexFlatIP con vectores normalizados calcula exactamente la similitud coseno.
+Como anticipo del día 3, el top-1 es el chunk correcto en las 3 preguntas.
+
+**E11 — Comportamiento de la cuota gratuita** (día 2). Al embeber los 324
+chunks en lotes de 50, los dos primeros lotes pasan y los siguientes reciben
+error 429 hasta que pasa el minuto; los reintentos con espera exponencial (10 +
+20 + 40 s) lo resuelven sin perder nada. Patrón compatible con un límite de
+~100 textos por minuto (Google ya no publica las cifras del tier gratuito; se
+consultan en AI Studio). Tiempo total: ~3 min para 324 chunks. Gracias a la
+caché, reconstruir el índice ya no hace ninguna llamada.
+
 ### Pendientes (día 6, si da tiempo)
 - **P1 — Chunking de tamaño fijo vs. estructural**: misma evaluación con ambos
   chunkers (fijo 1000/200 frente a estructural 3000/400/300; ver E7).
@@ -447,3 +566,5 @@ columna (15 casos, casi todos tablas o listas).
   en la calidad del retrieval.
 - **P4 — Expansión al padre**: generación con y sin `EXPANDIR_CONTEXTO`
   (tope 6000 car.; ver E6). Especialmente relevante en preguntas multi-hop.
+- **P5 — Dimensión de los embeddings**: 768 frente a 3072 (requiere volver a
+  embeber el corpus una vez).
