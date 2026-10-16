@@ -14,6 +14,9 @@ Plazo: 1 semana. Idioma de código, comentarios y borradores técnicos: **españ
 - Cada módulo implementado se documenta en `docs/memoria/04_implementacion.md`
   (qué hace, parámetros reales, decisiones). La redacción académica la hace el
   usuario aparte.
+- **Registrar todos los experimentos y análisis** (con datos y conclusión) en la
+  sección "Registro de experimentos" de `docs/memoria/04_implementacion.md`.
+  Van a la memoria del TFM.
 - **No iniciar ninguna ampliación** (guardrails, memoria conversacional,
   retrieval híbrido, observabilidad, FastAPI, LangGraph) salvo petición
   explícita.
@@ -32,8 +35,13 @@ Plazo: 1 semana. Idioma de código, comentarios y borradores técnicos: **españ
   - Cada página va precedida de `<!-- pagina: N -->` con la **página impresa**
     (= página PDF − desfase; en este libro, desfase 2). Las citas usan esa página.
   - El conversor no limpia; la limpieza del Markdown se hace en el loader.
-- **Chunking**: función propia de tamaño fijo con overlap. NO usar el chunker de
-  Docling.
+- **Chunking estructural híbrido** (decidido el día 1; sustituye al tamaño fijo
+  puro): se corta por títulos, con la jerarquía reconstruida a partir del perfil
+  tipográfico del PDF (`src/ingest/estructura.py`, perfil en `config.py`).
+  Secciones > 3000 car. se subdividen con la función propia de tamaño fijo +
+  overlap 400; secciones < 300 car. se unen a la siguiente; cada chunk lleva su
+  ruta de títulos. El chunker de tamaño fijo puro se conserva como baseline
+  (experimento del día 6). NO usar el chunker de Docling.
 - **LLM y embeddings**: Google Gemini API, tier gratuito, misma API key.
   Verificar modelos vigentes del tier gratuito antes de fijarlos en `config.py`.
   - Alternativa si hay problemas de cuota: Groq (Llama) + sentence-transformers
@@ -63,7 +71,7 @@ Plazo: 1 semana. Idioma de código, comentarios y borradores técnicos: **españ
 ```
 data/{raw,processed}/, storage/
 src/: config.py, llm_clients.py, pipeline.py
-  ingest/ (convert_docling.py, loader.py), chunking/, embeddings/,
+  ingest/ (convert_docling.py, estructura.py, loader.py), chunking/, embeddings/,
   vectorstore/, retrieval/ (cosine_manual.py, retriever.py), router/,
   generation/, eval/ (run_eval.py, baseline.py)
 notebooks/01_walkthrough.ipynb  (crece cada día)
