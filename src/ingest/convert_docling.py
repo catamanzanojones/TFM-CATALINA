@@ -17,6 +17,7 @@ Uso:
     python -m src.ingest.convert_docling --desfase 2
     python -m src.ingest.convert_docling --pdf data/raw/otro.pdf      (uno solo)
     python -m src.ingest.convert_docling --desfase 2 --forzar         (reconvertir)
+    python -m src.ingest.convert_docling --desfase 2 --desde-json     (solo re-exportar)
 """
 
 import argparse
@@ -26,6 +27,7 @@ from pathlib import Path
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling_core.types.doc import DoclingDocument
 
 from src import config
 
@@ -53,7 +55,9 @@ def markdown_con_paginas(doc, desfase: int) -> str:
     for n_pdf in sorted(doc.pages):
         # Las páginas iniciales (portada...) no tienen número impreso: quedan en 0.
         n_impresa = max(n_pdf - desfase, 0)
-        texto = doc.export_to_markdown(page_no=n_pdf)
+        # traverse_pictures=True: incluir también el texto que Docling sitúa
+        # dentro de una ilustración; si no, se pierde (ver experimento E8).
+        texto = doc.export_to_markdown(page_no=n_pdf, traverse_pictures=True)
         partes.append(f"<!-- pagina: {n_impresa} -->\n\n{texto.strip()}\n")
     return "\n".join(partes)
 
@@ -87,7 +91,20 @@ def main() -> None:
                         help="Convertir solo este PDF (por defecto, todos los de data/raw/).")
     parser.add_argument("--forzar", action="store_true",
                         help="Reconvertir aunque ya exista el .md de salida.")
+    parser.add_argument("--desde-json", action="store_true",
+                        help="Regenerar los .md a partir de los .json guardados, sin "
+                             "volver a convertir los PDF (rápido).")
     args = parser.parse_args()
+
+    if args.desde_json:
+        # La conversión (lo lento) ya está hecha y guardada en el .json: solo
+        # se vuelve a exportar el Markdown.
+        for ruta_json in sorted(CARPETA_SALIDA.glob("*.json")):
+            doc = DoclingDocument.load_from_json(ruta_json)
+            ruta_md = CARPETA_SALIDA / f"{ruta_json.stem}.md"
+            ruta_md.write_text(markdown_con_paginas(doc, args.desfase), encoding="utf-8")
+            print(f"Regenerado desde JSON: {ruta_md.name}")
+        return
 
     pdfs = [args.pdf] if args.pdf else sorted(CARPETA_ENTRADA.glob("*.pdf"))
     if not pdfs:

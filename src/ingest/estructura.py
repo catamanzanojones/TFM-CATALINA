@@ -157,7 +157,8 @@ def buscar_titulo(lineas: list[str], i: int, pendientes: list):
         # Título pegado a un párrafo: solo si lo que sigue empieza una frase
         # nueva (mayúscula). Evita partir "Rasgos centrales son..." por
         # coincidir con el título "Rasgos".
-        if not normalizar(resto) or resto[:1].isupper():
+        # Se saltan los signos de apertura: "establece tus creencias ¿Cuáles...".
+        if not normalizar(resto) or resto.lstrip("¿¡«“\"'(")[:1].isupper():
             return k, nivel, titulo, resto, j
         if es_titulo_docling and j == i:
             # Docling ya dijo que la línea es un título y lo que sigue va en
@@ -218,10 +219,15 @@ def estructurar_documento(ruta_md, ruta_pdf, perfil: dict, rangos: list) -> str:
     for indice, ((num_impresa, texto), pagina_pdf) in enumerate(zip(paginas_md, lector.pages)):
         titulos = titulos_de_pagina(pagina_pdf, perfil)
         nuevo, niveles, no_encontrados = estructurar_pagina(texto, titulos)
-        # Respaldo: si aquí empieza un capítulo del índice y no se ha colocado
-        # ningún título de nivel 1, lo añadimos al principio de la página.
-        if indice in capitulos and 1 not in niveles:
-            nuevo = f"# {capitulos[indice]}\n\n{nuevo}"
+        # Capítulos: si aquí empieza un capítulo de los marcadores del PDF, su
+        # nombre manda (el título decorativo de la portadilla puede salir
+        # incompleto, p. ej. "Sistemas" en vez de "Sistemas Avanzados"). Si no se
+        # ha colocado ningún título de nivel 1, se añade al principio.
+        if indice in capitulos:
+            if 1 in niveles:
+                nuevo = re.sub(r"^# .*$", f"# {capitulos[indice]}", nuevo, count=1, flags=re.M)
+            else:
+                nuevo = f"# {capitulos[indice]}\n\n{nuevo}"
             no_encontrados = [(t, n) for t, n in no_encontrados if n != 1]
         salida.append(f"<!-- pagina: {num_impresa} -->\n\n{nuevo.strip()}\n")
         total_pdf += len(titulos)

@@ -102,7 +102,11 @@ Convierte todos los PDF de `data/raw/` con Docling y guarda, en
 - **El conversor no limpia el texto**: guarda la salida de Docling tal cual. La
   limpieza va en el loader (una responsabilidad por pieza).
 - **Se guarda también el JSON** de Docling (`save_as_json`): permite regenerar el
-  Markdown con otro formato sin repetir la conversión.
+  Markdown con otro formato sin repetir la conversión (`--desde-json`, ~2 min
+  frente a 6,5 min). Se aprovechó tras la revisión manual (E8).
+- **`traverse_pictures=True`** al exportar: incluye el texto que Docling sitúa
+  dentro de una ilustración, que de otro modo se pierde (p. ej. los niveles 4-5
+  de la Habilidad Ciencias). Añadido tras la revisión manual (E8).
 
 **Resultado**: 404 páginas, 32 tablas, ~1,1 millones de caracteres de Markdown,
 **6,5 minutos** en CPU (sin GPU). Docling avisó de una celda descartada en una
@@ -121,8 +125,10 @@ tabla.
 1. Un párrafo que cruza de página se reconstruye entero y se asigna a la página
    donde **empieza** (p. ej. el párrafo de Klaus, págs. 150-151, queda en la
    150). La cita de la parte final puede indicar la página anterior.
-2. Texto incrustado dentro de una ilustración se descarta: se pierden el poema
-   de la pág. 161 (sin reglas) y la cronología de la pág. 57 (fuera del corpus).
+2. Texto incrustado dentro de una ilustración: con la exportación por defecto
+   se descartaba; con `traverse_pictures=True` se recupera, aunque a veces
+   desordenado ("equi- •••• Eres un experto... / pos científicos."), y arrastra
+   texto decorativo que se limpia en el loader (ver E8).
 
 ### Configuración (`src/config.py`)
 Centraliza rutas y todo lo que depende del documento, de modo que el resto del
@@ -175,16 +181,20 @@ Ese **perfil tipográfico** se declara en `config.py`; el código es genérico.
      recuadros): se rebaja a negrita para que no corte la sección (96 casos en
      el corpus).
    - Se unen los guiones de corte de línea dentro del título ("fuer- za").
-4. **Respaldo para capítulos**: si en una página empieza un capítulo de los
-   marcadores del PDF y no se ha colocado ningún título de nivel 1, se añade
-   (la portadilla decorativa de "Reglas" no la extrae Docling).
+   - Al comprobar la mayúscula se saltan los signos de apertura ("establece tus
+     creencias ¿Cuáles..."), y la puntuación de cierre se queda en el título
+     ("¿Cómo Cazas?").
+4. **Capítulos según los marcadores del PDF**: si en una página empieza un
+   capítulo de los marcadores, su nombre manda (la portadilla decorativa puede
+   salir incompleta: "Sistemas" en vez de "Sistemas Avanzados"); si no se ha
+   colocado ningún título de nivel 1, se añade.
 
 Salida: `data/processed/estructurado/<documento>.md`. Los documentos sin perfil
 tipográfico se copian sin cambios (el sistema funciona igual, sin jerarquía).
 
-**Resultado final**: 868 de 895 títulos del PDF colocados (97 %); en el corpus
-queda **1 sin colocar** ("establece tus creencias", pág. 146). Títulos en el
-corpus por nivel: 1→2, 2→3, 3→38, 4→151, 5→186. El árbol resultante reproduce
+**Resultado final**: 875 de 895 títulos del PDF colocados (98 %); en el corpus
+**no queda ninguno sin colocar** (ver E5). Capítulos en las rutas de los chunks:
+Reglas, Personajes, Disciplinas y Sistemas Avanzados. El árbol resultante reproduce
 la estructura lógica del libro, p. ej.:
 
 ```
@@ -211,25 +221,41 @@ sueltos `.md`/`.txt` de `data/raw/`. Parte cada documento por los marcadores
 `documento` —nombre legible para citas—, `pagina`, `texto`, `en_corpus`). Los
 documentos sin marcadores entran como una única página con `pagina = None`.
 
-**Limpieza** (mínima, con expresiones regulares): elimina `<!-- image -->` y las
-viñetas decorativas `■`, une palabras partidas por un salto de columna
-("se resuel-" / "ve" → "se resuelve") y colapsa líneas en blanco repetidas.
+**Limpieza** (con expresiones regulares; las reglas 4-6 se añadieron tras la
+revisión manual, ver E8):
+1. Elimina `<!-- image -->` y las viñetas decorativas `■`.
+2. Une palabras partidas por un salto de columna ("se resuel-" / "ve").
+3. Colapsa líneas en blanco repetidas.
+4. **Nivel 1 de las listas de niveles**: Docling convierte el "•" del nivel 1
+   en una viñeta y el punto se pierde; si a un elemento sin puntos le sigue
+   uno con "··", se le añade "·".
+5. **Etiquetas flotantes**: quita las líneas en negrita que interrumpen una
+   frase a medias ("...secarás a un" / "**Investigador investigador**" /
+   "Cainita..."), que son rótulos de ilustraciones. Mira la línea anterior
+   aunque esté en la página anterior.
+6. **Texto decorativo** (aparece con `traverse_pictures`): letras o cifras
+   sueltas espaciadas ("2 4 8", "L I BRO BÁS I CO"), una palabra repetida
+   ("ejecutivo Ejecutivo") y rótulos duplicados en dos líneas seguidas
+   ("Veterano" / "veterano"). Listas, tablas y títulos no se tocan.
 
 **Decisión**: las páginas fuera del corpus **no se descartan** en el loader,
 solo se marcan (`en_corpus = False`). El chunker necesita sus títulos para
 construir la jerarquía: p. ej. el título del capítulo "Personajes" está en la
 pág. 133 (fuera del corpus) y sus secciones (pág. 135 en adelante) sí entran.
 
-**Resultado**: 404 páginas cargadas, 112 en el corpus, 373.145 caracteres.
+**Resultado**: 404 páginas cargadas, 112 en el corpus, 373.603 caracteres.
 
 ### Chunking (`src/chunking/chunker.py`)
 Dos estrategias, ambas implementadas a mano:
 
 **1. Tamaño fijo con overlap** (`chunks_fijos`, baseline del experimento P1):
 ventanas de 1000 caracteres con 200 de solape sobre el texto seguido de cada
-documento, sin mirar los títulos. Si un corte cae a mitad de palabra, retrocede
-hasta el último espacio y el trozo siguiente empieza al principio de una
-palabra (`trocear_fijo`).
+documento, sin mirar los títulos (`trocear_fijo`). Para que los trozos sean
+legibles, el final se pone en el mejor separador del último 25 % de la ventana
+(fin de párrafo > fin de línea > fin de frase > espacio) y el trozo siguiente
+empieza en el primer principio de línea o de frase de la zona de solape. La
+versión inicial solo evitaba partir palabras: 353 de 467 chunks empezaban a
+mitad de frase (ver E8).
 
 **2. Estructural híbrido** (`chunks_estructurales`, estrategia principal):
 1. Construye el **árbol de secciones** de cada documento a partir de los
@@ -260,7 +286,11 @@ posición empieza cada página; la página de cualquier carácter se obtiene con
 búsqueda binaria (`bisect`). Así un chunk que cruza de página se cita como
 "págs. X-Y".
 
-**Resultado** (ver E7): 324 chunks estructurales frente a 467 de tamaño fijo.
+**Separación de páginas**: entre una página y la siguiente se inserta una línea
+en blanco; sin ella, la última línea de una página quedaba pegada a la primera
+de la siguiente (ver E8).
+
+**Resultado** (ver E7): 324 chunks estructurales frente a 482 de tamaño fijo.
 Los chunks se vuelcan a `storage/chunks_*.json` para inspeccionarlos.
 
 **Ajustes tras revisar chunks concretos**:
@@ -271,9 +301,11 @@ Los chunks se vuelcan a `storage/chunks_*.json` para inspeccionarlos.
 - `estructura.py` perdía la puntuación de cierre de los títulos ("¿Cómo
   Cazas" sin "?") → ahora se conserva.
 
-**Limitación**: algunos párrafos que Docling parte en un salto de página llegan
-partidos al chunk (p. ej. "...pág. 290 del capítulo de Sistemas." / "de acción
-y más largos..."); el overlap mitiga el efecto en las secciones subdivididas.
+**Limitación**: algunos párrafos que Docling parte en un salto de página o de
+columna llegan partidos en dos párrafos dentro del chunk (p. ej. "...Tira Astucia
++ Intimidación (la" / "dificultad es..."). Se analizó unirlos automáticamente y
+se descartó: solo hay 15 casos en el corpus y casi todos son maquetación de
+tablas o listas, que una regla automática estropearía (ver E8).
 
 ### Expansión al padre (prevista para el día 3)
 Se busca con chunks pequeños (precisos), pero al LLM se le entrega el
@@ -333,6 +365,7 @@ Decisión: máximo 3000 caracteres.
 | v1: comparación normalizada + regla de mayúscula | 776 / 912 | 24 | — |
 | v2: + puntuación, títulos multilínea, `##` parciales, respaldo de capítulos | 868 / 895 | 1 | 4 títulos sospechosos (> 40 car.) |
 | v3: + `##` seguido de mayúscula se separa, unión de guiones | 868 / 895 | 1 | 0 |
+| v4 (tras E8): + signos de apertura/cierre, `traverse_pictures`, capítulos según marcadores | 875 / 895 | 0 | 0 |
 
 Causas de fallo en v1: dos puntos tras el título, títulos partidos por pypdf o
 por Docling en varias líneas, portadilla decorativa no extraída y guiones de
@@ -354,19 +387,57 @@ LLM (expansión al padre, P4).
 Conclusión: los niveles 1-2 son inviables como contexto; el nivel 3 a veces; el
 4-5 casi siempre. De ahí el tope de 6000 caracteres para la expansión.
 
-**E7 — Chunking de tamaño fijo vs. estructural: estadísticas** (día 1). Mismo
-corpus (112 págs., 373.145 car.).
+**E7 — Chunking de tamaño fijo vs. estructural: estadísticas** (día 1, cifras
+tras los arreglos de E8). Mismo corpus (112 págs., 373.603 car.).
 
-| Estrategia | Chunks | Mín. | Mediana | p90 | Máx. |
-|---|---|---|---|---|---|
-| Tamaño fijo 1000/200 | 467 | 798 | 996 | 999 | 999 |
-| Estructural híbrido 3000/400/300 | 324 | 221 | 973 | 2409 | 2999 |
+| Estrategia | Chunks | Mín. | Mediana | p90 | Máx. | Cruzan de página |
+|---|---|---|---|---|---|---|
+| Tamaño fijo 1000/200 | 482 | 643 | 910 | 982 | 999 | 137 |
+| Estructural híbrido 3000/400/300 | 324 | 221 | 989 | 2409 | 2982 | 74 |
 
-En el estructural: 15 secciones subdivididas por tamaño, 74 chunks que unen
-secciones cortas, 75 chunks que cruzan de página y 0 chunks sin ruta. El
+En el estructural: 16 secciones subdivididas por tamaño, 74 chunks que unen
+secciones cortas y 0 chunks sin ruta. El
 tamaño mínimo (221) corresponde a secciones cortas que no se pueden unir porque
 la siguiente no es hija ni hermana. Pendiente: comparar su calidad de retrieval
 (P1).
+
+**E8 — Revisión manual de chunks y arreglos** (día 1). Muestra aleatoria
+reproducible de 20 chunks estructurales (`random.seed(42)`), revisando ruta,
+páginas, limpieza del texto, principio y final, tablas y títulos. 12 correctos y
+8 con algún fallo;
+se encontraron 6 tipos de fallo:
+
+| # | Fallo | Causa | Arreglo |
+|---|---|---|---|
+| A | Rótulo en mitad de una frase ("secarás a un / **Investigador investigador** / Cainita") | Etiqueta de una ilustración colocada por Docling en el texto | Loader: quitar etiquetas que interrumpen una frase |
+| B | Falta el punto del nivel 1 en las listas de niveles (40 casos) | Docling convierte "•" en viñeta | Loader: añadir "·" al elemento previo a "··" |
+| C | Texto perdido (final de Ciencias) | Docling lo sitúa dentro de una ilustración | Exportar con `traverse_pictures=True` (sin reconvertir, desde el JSON) |
+| D | Ruta incorrecta: la sección "Establece tus creencias" pegada a la anterior | Título seguido de "¿", que no se reconocía como mayúscula | `estructura.py`: saltar signos de apertura |
+| E | Negrita pegada al párrafo anterior | Las páginas se unían con un solo salto de línea | Chunker: línea en blanco entre páginas |
+| F | Trozos que empiezan a mitad de frase | `trocear_fijo` solo respetaba palabras | Cortes en fin de párrafo/línea/frase |
+
+Recuento automático de síntomas en todos los chunks, antes → después:
+
+| Síntoma | Fijo (467 → 482 chunks) | Estructural (324 chunks) |
+|---|---|---|
+| Empieza a mitad de frase | 353 → 14 | 14 → 1 |
+| Acaba a mitad de frase | 291 → 11 | 17 → 8 |
+| Etiqueta cortando una frase | 12 → 0 | 10 → 0 |
+| Negrita pegada al párrafo | 16 → 0 | 17 → 0 |
+| Nivel 1 sin punto | 40 → 0 | 36 → 0 |
+
+Los arreglos introdujeron dos efectos secundarios, detectados al revisar y
+corregidos: `traverse_pictures` añadió 16 líneas en el corpus, 7 de contenido
+real y 9 decorativas ("2 4 8", "ejecutivo Ejecutivo"...), que se limpian en el
+loader; y cambió el nombre de un capítulo ("Sistemas" en vez de "Sistemas
+Avanzados"), resuelto usando siempre el nombre de los marcadores del PDF. Una
+segunda muestra aleatoria (`random.seed(7)`, 10 chunks) tras los arreglos no
+mostró fallos nuevos. Cobertura de líneas de pypdf en el Markdown: 98,9 % sin
+`traverse_pictures`, 99,0 % con él; lo que falta son sobre todo cabeceras de
+página (eliminadas a propósito).
+
+Analizado y descartado: unir automáticamente párrafos partidos por un salto de
+columna (15 casos, casi todos tablas o listas).
 
 ### Pendientes (día 6, si da tiempo)
 - **P1 — Chunking de tamaño fijo vs. estructural**: misma evaluación con ambos

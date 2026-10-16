@@ -101,31 +101,43 @@ def agrupar_por_documento(paginas: list[Pagina]) -> list[tuple[str, list[Pagina]
 # Estrategia 1: tamaño fijo con overlap (baseline)
 # ---------------------------------------------------------------------------
 
+SEPARADORES = ["\n\n", "\n", ". ", " "]   # puntos de corte, del mejor al peor
+ZONA_DE_CORTE = 0.75                       # el corte se busca en el último 25 % de la ventana
+
+
 def trocear_fijo(texto: str, tamano: int, overlap: int) -> list[tuple[int, int]]:
     """
     Trocea `texto` en ventanas de unos `tamano` caracteres que se solapan
     `overlap` caracteres. Devuelve las posiciones (inicio, fin) de cada trozo.
 
-    Para no partir palabras: si un corte cae a mitad de palabra, se retrocede
-    hasta el último espacio o salto de línea, y el trozo siguiente empieza al
-    principio de una palabra.
+    Para que los trozos sean legibles:
+      - el final se pone en el mejor separador del último 25 % de la ventana,
+        por este orden: fin de párrafo, fin de línea, fin de frase, espacio
+        (así el tamaño apenas varía, pero no se cortan frases si se puede evitar);
+      - el trozo siguiente empieza `overlap` caracteres antes, en el primer
+        principio de línea o de frase de esa zona (si no hay, de palabra).
     """
     assert 0 <= overlap < tamano, "El overlap debe ser menor que el tamaño"
     trozos, inicio = [], 0
     while inicio < len(texto):
         fin = min(inicio + tamano, len(texto))
         if fin < len(texto):
-            hueco = max(texto.rfind(" ", inicio, fin), texto.rfind("\n", inicio, fin))
-            if hueco > inicio + overlap:   # retroceder solo si el trozo no queda demasiado corto
-                fin = hueco
+            minimo = inicio + max(overlap + 1, int(tamano * ZONA_DE_CORTE))
+            for separador in SEPARADORES:
+                posicion = texto.rfind(separador, minimo, fin)
+                if posicion != -1:
+                    fin = posicion + len(separador)   # el separador se queda en este trozo
+                    break
         trozos.append((inicio, fin))
-        if fin == len(texto):
+        if fin >= len(texto):
             break
-        # El siguiente trozo empieza `overlap` caracteres antes del final de
-        # este, avanzando hasta el principio de una palabra.
         siguiente = fin - overlap
-        while siguiente < fin and not texto[siguiente - 1].isspace():
-            siguiente += 1
+        principios = [p + len(s) for s in ("\n", ". ") if (p := texto.find(s, siguiente, fin)) != -1]
+        if principios:
+            siguiente = min(principios)
+        else:
+            espacio = texto.find(" ", siguiente, fin)
+            siguiente = espacio + 1 if espacio != -1 else fin
         inicio = siguiente
     return trozos
 
@@ -135,8 +147,9 @@ def chunks_fijos(paginas: list[Pagina], tamano: int = config.CHUNK_FIJO_TAMANO,
     """Baseline: tamaño fijo sobre el texto seguido de cada documento (solo corpus)."""
     chunks = []
     for doc_id, pags in agrupar_por_documento(paginas):
+        # La línea en blanco ("") del final separa cada página de la siguiente.
         lineas = [(p.pagina, linea) for p in pags if p.en_corpus
-                  for linea in p.texto.splitlines()]
+                  for linea in p.texto.splitlines() + [""]]
         texto, inicios, nums = unir_lineas(lineas)
         for a, b in trocear_fijo(texto, tamano, overlap):
             contenido = texto[a:b].strip()
@@ -168,6 +181,10 @@ def construir_secciones(pags: list[Pagina], prefijo: str) -> list[Seccion]:
     pila = [raiz]   # secciones abiertas, de la raíz a la actual
 
     for p in pags:
+        # Línea en blanco entre páginas: si no, la última línea de una página
+        # quedaría pegada a la primera de la siguiente.
+        if p.en_corpus and pila[-1].lineas:
+            pila[-1].lineas.append((p.pagina, ""))
         for linea in p.texto.splitlines():
             m = TITULO.match(linea)
             if m:
