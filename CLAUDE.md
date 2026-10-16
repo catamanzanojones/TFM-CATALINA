@@ -107,3 +107,5 @@ requirements.txt, README.md
 - Commitear los cambios con frecuencia a medida que avanza el trabajo.
 - `data/raw/`, `data/processed/`, `storage/` y `.env` NUNCA se suben
   (copyright y secretos).
+- El notebook se commitea **sin salidas** (contienen texto del libro). Antes de
+  commitearlo: `jupyter nbconvert --clear-output --inplace notebooks/*.ipynb`.

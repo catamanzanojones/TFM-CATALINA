@@ -401,6 +401,24 @@ Producto escalar, norma y coseno en Python puro (bucles, sin numpy):
 2. **Casos reales**: 3 preguntas (una por capítulo), coseno a mano contra los
    324 chunks frente a `IndiceVectorial.buscar` (FAISS). Resultados en E10.
 
+### Notebook (`notebooks/01_walkthrough.ipynb`)
+Recorrido pedagógico de los días 1 y 2: para cada pieza, qué hace y por qué,
+el código real (importado de `src/`, sin duplicarlo) y su resultado. Secciones:
+ingesta (Markdown de Docling frente al estructurado, árbol de títulos y perfil
+tipográfico), loader (ejemplo de cada regla de limpieza), chunking (troceado
+fijo en pequeño, comparación de estrategias con histograma, chunk con todos sus
+metadatos y tamaño de sus ancestros), embeddings (texto con prefijo, vector,
+caché), coseno a mano (ejemplo de juguete, comparación con FAISS, distribución
+de similitudes) y búsqueda libre top-5.
+
+**Decisiones**:
+- Lee lo ya calculado en `data/processed/` y `storage/`: no repite la
+  conversión ni gasta cuota (solo la búsqueda libre llama a la API con una
+  pregunta nueva).
+- **Se guarda en el repositorio sin salidas**: contienen texto del libro
+  (copyright) y el repositorio es público. Se ejecuta en local.
+- Verificado ejecutándolo entero con `nbconvert`: 44 celdas, 0 errores.
+
 ---
 
 ## Registro de experimentos
@@ -557,6 +575,16 @@ error 429 hasta que pasa el minuto; los reintentos con espera exponencial (10 +
 ~100 textos por minuto (Google ya no publica las cifras del tier gratuito; se
 consultan en AI Studio). Tiempo total: ~3 min para 324 chunks. Gracias a la
 caché, reconstruir el índice ya no hace ninguna llamada.
+
+**E12 — Distribución de similitudes de una pregunta** (día 2). Coseno de la
+pregunta "¿Qué hace el poder Puntería certera de Celeridad?" con los 324 chunks
+(histograma en el notebook): mínimo 0,485, mediana 0,569, máximo 0,814. Tres
+escalones: el chunk correcto (0,814); los otros 10 chunks de Celeridad
+(0,668-0,722: Reflejos rápidos, Gracia felina, Golpe relámpago, la sección
+general...); y el resto del libro (0,49-0,65). El embedding captura la
+jerarquía: los fragmentos de la misma disciplina quedan más cerca de la
+pregunta que el resto, en parte gracias a la ruta de títulos pasada como
+`title`. Confirma también la anisotropía de E9 (nada baja de 0,48).
 
 ### Pendientes (día 6, si da tiempo)
 - **P1 — Chunking de tamaño fijo vs. estructural**: misma evaluación con ambos

@@ -19,5 +19,7 @@ faiss-cpu        # vector store local (IndexFlatIP)
 # ragas                   # métricas RAG
 # anthropic               # solo comparación opcional con Claude
 
-# --- Notebook ---
-# jupyter
+# --- Notebook (notebooks/01_walkthrough.ipynb) ---
+jupyter          # entorno de notebooks
+ipykernel        # kernel de Python para el notebook (usa el .venv)
+matplotlib       # gráficos del walkthrough
