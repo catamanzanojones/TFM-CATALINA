@@ -1,8 +1,13 @@
 # --- Datos con copyright y artefactos generados ---
-data/raw/
-storage/
-# Permitimos que los .gitkeep mantengan las carpetas vacías visibles en git
+# Se usa "carpeta/*" (y no "carpeta/") para ignorar el CONTENIDO pero poder
+# conservar el .gitkeep: git no puede re-incluir un archivo si su carpeta
+# entera está excluida.
+data/raw/*
 !data/raw/.gitkeep
+# data/processed contiene el texto del libro convertido (también con copyright)
+data/processed/*
+!data/processed/.gitkeep
+storage/*
 !storage/.gitkeep
 
 # --- Secretos ---
