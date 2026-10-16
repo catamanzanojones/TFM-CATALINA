@@ -27,8 +27,10 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
-CARPETA_ENTRADA = Path("data/raw")
-CARPETA_SALIDA = Path("data/processed")
+from src import config
+
+CARPETA_ENTRADA = config.CARPETA_RAW
+CARPETA_SALIDA = config.CARPETA_PROCESADOS
 
 
 def crear_convertidor() -> DocumentConverter:

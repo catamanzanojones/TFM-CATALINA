@@ -56,6 +56,10 @@ Plazo: 1 semana. Idioma de código, comentarios y borradores técnicos: **españ
   dominio". Se decide el día 4.
 - **Generación**: prompt con contexto recuperado + pregunta; la respuesta cita
   la fuente (documento y página).
+  - Cada chunk lleva metadatos jerárquicos (ruta de títulos, `seccion_id`,
+    `ancestros_ids`) y hay un almacén de secciones. Día 3: **expansión al padre**
+    (al LLM se le pasa el ancestro más grande que quepa en 6000 car.), con
+    interruptor `EXPANDIR_CONTEXTO` para evaluarlo (experimento P4).
 - **Evaluación**: `eval/dataset.json` (15-20 preguntas con respuesta esperada),
   métricas con RAGAS, comparación contra baseline (mismo LLM sin RAG). Claude
   (API de pago) solo como comparación opcional, nunca como motor principal.

@@ -203,31 +203,85 @@ Disciplinas
 (análisis de fuentes + revisión); un título con un estilo no recogido en el
 perfil no se detecta (su texto acaba en la sección anterior).
 
-### Loader (pendiente)
-- `loader.py`: loader propio que lee los `.md` estructurados (y TXT/MD
-  sueltos), parte por marcadores de página, limpia y filtra por rangos.
-- Limpieza prevista: `<!-- image -->`, viñetas `- ■ ■`, líneas en blanco
-  repetidas y palabras partidas por un salto de columna ("se resuel-" / "ve").
+### Loader (`src/ingest/loader.py`)
+Lee los Markdown estructurados (`data/processed/estructurado/`; si un documento
+no tiene versión estructurada, usa la de `data/processed/`) y los documentos
+sueltos `.md`/`.txt` de `data/raw/`. Parte cada documento por los marcadores
+`<!-- pagina: N -->` y devuelve una lista de páginas (`Pagina`: `doc_id`,
+`documento` —nombre legible para citas—, `pagina`, `texto`, `en_corpus`). Los
+documentos sin marcadores entran como una única página con `pagina = None`.
 
-### Chunking (pendiente de implementar)
-**Decisión: chunking estructural híbrido** (sustituye al tamaño fijo puro que
-se había previsto inicialmente):
-- Se corta por títulos; cada chunk lleva su **ruta de títulos**
-  (p. ej. `Disciplinas > Celeridad > Nivel 4 > Puntería certera`), que se
-  antepone al texto y sirve también para las citas.
-- Secciones de más de **3000** caracteres se subdividen con la función propia de
-  tamaño fijo con **overlap de 400** caracteres.
-- Secciones de menos de **300** caracteres se unen a la siguiente.
-- La función de tamaño fijo pura se conserva como **baseline** (experimento P1).
-- No se usa el chunker de Docling.
+**Limpieza** (mínima, con expresiones regulares): elimina `<!-- image -->` y las
+viñetas decorativas `■`, une palabras partidas por un salto de columna
+("se resuel-" / "ve" → "se resuelve") y colapsa líneas en blanco repetidas.
 
-**Justificación del tamaño máximo** (ver experimento E4): con 1500 caracteres
-habría que partir el 31 % de las secciones (62 % del texto), perdiendo la
-ventaja de cortar por títulos; con 3000 solo el 7 % (y menos aún tras añadir el
-nivel 5). Como cada sección trata un único tema, se pueden permitir chunks más
-grandes sin diluir el embedding. 3000 caracteres son unos 800 tokens, por debajo
-del límite del modelo de embeddings (a confirmar el día 2) y sin problema para
-el contexto del LLM (5 chunks ≈ 4000 tokens).
+**Decisión**: las páginas fuera del corpus **no se descartan** en el loader,
+solo se marcan (`en_corpus = False`). El chunker necesita sus títulos para
+construir la jerarquía: p. ej. el título del capítulo "Personajes" está en la
+pág. 133 (fuera del corpus) y sus secciones (pág. 135 en adelante) sí entran.
+
+**Resultado**: 404 páginas cargadas, 112 en el corpus, 373.145 caracteres.
+
+### Chunking (`src/chunking/chunker.py`)
+Dos estrategias, ambas implementadas a mano:
+
+**1. Tamaño fijo con overlap** (`chunks_fijos`, baseline del experimento P1):
+ventanas de 1000 caracteres con 200 de solape sobre el texto seguido de cada
+documento, sin mirar los títulos. Si un corte cae a mitad de palabra, retrocede
+hasta el último espacio y el trozo siguiente empieza al principio de una
+palabra (`trocear_fijo`).
+
+**2. Estructural híbrido** (`chunks_estructurales`, estrategia principal):
+1. Construye el **árbol de secciones** de cada documento a partir de los
+   títulos `#`...`#####`. Los títulos se leen en todas las páginas; el texto,
+   solo en las del corpus.
+2. Un chunk por sección. Secciones de más de **3000** caracteres se subdividen
+   con `trocear_fijo` (overlap **400**). Secciones con menos de **300**
+   caracteres de texto se unen a la siguiente si es su hija o su hermana.
+3. Cada chunk lleva **metadatos jerárquicos**:
+   - `documento`, `pagina_inicio`, `pagina_fin` (para las citas);
+   - `ruta`: títulos de todos los niveles, p. ej.
+     `["Disciplinas", "Celeridad", "Nivel 4", "Puntería certera"]`;
+   - `seccion_id` y `ancestros_ids`: apuntan al **almacén de secciones**
+     (`{id: título, nivel, padre, hijos, texto propio}`), que permitirá la
+     expansión al padre en la generación (ver P4).
+4. El texto que se convierte en embedding es `texto_con_ruta`: la ruta de
+   títulos seguida del texto, para que el vector "sepa" de qué capítulo y
+   sección habla el fragmento.
+
+**Regla de la ruta**: la ruta de un chunk es la de la sección más profunda que
+contiene todo su texto. Si se unen secciones hermanas, queda la del padre común
+(no se atribuye el chunk a una sola de ellas). Las secciones que solo aportan
+su título (p. ej. "Nivel 4" seguido directamente de "Puntería certera") no
+cuentan, para no perder el nivel más específico.
+
+**Seguimiento de páginas**: al unir las líneas de un bloque se guarda en qué
+posición empieza cada página; la página de cualquier carácter se obtiene con
+búsqueda binaria (`bisect`). Así un chunk que cruza de página se cita como
+"págs. X-Y".
+
+**Resultado** (ver E7): 324 chunks estructurales frente a 467 de tamaño fijo.
+Los chunks se vuelcan a `storage/chunks_*.json` para inspeccionarlos.
+
+**Ajustes tras revisar chunks concretos**:
+- La primera versión calculaba la ruta con todas las secciones unidas, y un
+  poder ("Puntería certera") quedaba con la ruta de su padre ("Nivel 4"), que
+  solo aportaba su título → se excluyen de la ruta las secciones sin texto
+  propio.
+- `estructura.py` perdía la puntuación de cierre de los títulos ("¿Cómo
+  Cazas" sin "?") → ahora se conserva.
+
+**Limitación**: algunos párrafos que Docling parte en un salto de página llegan
+partidos al chunk (p. ej. "...pág. 290 del capítulo de Sistemas." / "de acción
+y más largos..."); el overlap mitiga el efecto en las secciones subdivididas.
+
+### Expansión al padre (prevista para el día 3)
+Se busca con chunks pequeños (precisos), pero al LLM se le entrega el
+**ancestro más grande que quepa en un tope de 6000 caracteres** (p. ej. un
+chunk de "Puntería certera" entregaría "Celeridad > Nivel 4" completo, 1.212
+car.; Celeridad entera, 10.406 car., no cabe). Si varios chunks comparten
+ancestro, se envía una sola vez. Se implementará con un interruptor
+(`EXPANDIR_CONTEXTO`) para evaluarlo (experimento P4). Datos en E6.
 
 ---
 
@@ -284,9 +338,41 @@ Causas de fallo en v1: dos puntos tras el título, títulos partidos por pypdf o
 por Docling en varias líneas, portadilla decorativa no extraída y guiones de
 corte de línea.
 
+**E6 — Tamaño de las secciones por nivel** (día 1). Sobre el Markdown
+estructurado del corpus, tamaño de cada sección incluyendo sus subsecciones.
+Sirve para decidir hasta qué nivel se puede entregar "el contexto completo" al
+LLM (expansión al padre, P4).
+
+| Nivel | Nº | Mediana (car.) | Máximo (car.) | Ejemplo |
+|---|---|---|---|---|
+| 1 Capítulo | 2 | 188.445 | 217.853 | Disciplinas |
+| 2 Parte | 3 | 44.580 | 64.504 | Creación de personajes |
+| 3 Sección | 38 | 9.363 | 28.554 | Celeridad: 10.406 |
+| 4 Apartado | 151 | 1.439 | 18.366 | Nivel 4 (Celeridad): 1.212 |
+| 5 Subapartado | 186 | 946 | 11.883 | — |
+
+Conclusión: los niveles 1-2 son inviables como contexto; el nivel 3 a veces; el
+4-5 casi siempre. De ahí el tope de 6000 caracteres para la expansión.
+
+**E7 — Chunking de tamaño fijo vs. estructural: estadísticas** (día 1). Mismo
+corpus (112 págs., 373.145 car.).
+
+| Estrategia | Chunks | Mín. | Mediana | p90 | Máx. |
+|---|---|---|---|---|---|
+| Tamaño fijo 1000/200 | 467 | 798 | 996 | 999 | 999 |
+| Estructural híbrido 3000/400/300 | 324 | 221 | 973 | 2409 | 2999 |
+
+En el estructural: 15 secciones subdivididas por tamaño, 74 chunks que unen
+secciones cortas, 75 chunks que cruzan de página y 0 chunks sin ruta. El
+tamaño mínimo (221) corresponde a secciones cortas que no se pueden unir porque
+la siguiente no es hija ni hermana. Pendiente: comparar su calidad de retrieval
+(P1).
+
 ### Pendientes (día 6, si da tiempo)
 - **P1 — Chunking de tamaño fijo vs. estructural**: misma evaluación con ambos
-  chunkers.
+  chunkers (fijo 1000/200 frente a estructural 3000/400/300; ver E7).
 - **P2 — Tamaño máximo de chunk**: 2000 / 3000 / 4000 caracteres.
 - **P3 — Corpus reducido vs. libro completo**: efecto de indexar las 404 páginas
   en la calidad del retrieval.
+- **P4 — Expansión al padre**: generación con y sin `EXPANDIR_CONTEXTO`
+  (tope 6000 car.; ver E6). Especialmente relevante en preguntas multi-hop.

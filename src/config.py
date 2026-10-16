@@ -48,3 +48,7 @@ DOCUMENTOS = {
 CHUNK_TAMANO_MAX = 3000   # caracteres; las secciones más largas se subdividen
 CHUNK_OVERLAP = 400       # caracteres de solape al subdividir una sección
 CHUNK_TAMANO_MIN = 300    # secciones más cortas se unen a la siguiente
+
+# --- Chunking de tamaño fijo (baseline para el experimento P1) ---
+CHUNK_FIJO_TAMANO = 1000  # caracteres
+CHUNK_FIJO_OVERLAP = 200  # caracteres

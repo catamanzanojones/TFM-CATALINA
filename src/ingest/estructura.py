@@ -149,6 +149,9 @@ def buscar_titulo(lineas: list[str], i: int, pendientes: list):
         if not corte:
             continue
         titulo, resto = corte
+        # La puntuación de cierre pertenece al título: "¿Cómo Cazas" + "?"
+        cierre = len(resto) - len(resto.lstrip("?!)»”"))
+        titulo, resto = titulo + resto[:cierre], resto[cierre:]
         resto = resto.lstrip(" :.;,—–-")   # "armas arrojadizas: Un..." -> "Un..."
 
         # Título pegado a un párrafo: solo si lo que sigue empieza una frase
