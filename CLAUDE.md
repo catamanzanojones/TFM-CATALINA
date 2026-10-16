@@ -19,12 +19,19 @@ Plazo: 1 semana. Idioma de código, comentarios y borradores técnicos: **españ
   explícita.
 
 ## Decisiones técnicas fijadas
-- **Dominio**: reglas de un juego de rol poco conocido (2-3 capítulos, ~60-100
-  págs.: creación de personaje, combate, magia). PDF en `data/raw/`.
+- **Dominio**: *Vampiro: La Mascarada* 5ª ed. (Madrid, 2018), elegido por su
+  complejidad (permite preguntas difíciles y multi-hop). Corpus: 2-3 capítulos
+  (~60-100 págs.: creación de personaje, combate, disciplinas). PDF en `data/raw/`.
+  Superado el punto de control del Día 1 (Docling): no se pivota.
   - **Plan B**: 3 reglamentos de juegos de mesa. El código NO depende del dominio.
 - **Ingesta**: Docling SOLO para PDF → Markdown (se ejecuta una vez, salida en
   `data/processed/`). Conservar el **número de página** de cada fragmento (citas).
   Después, loader propio y simple que lee esos `.md` (y TXT/MD sueltos).
+  - Se convierte el **PDF completo** (OCR desactivado); el corpus indexado se
+    limita con **rangos de páginas en `config.py`**.
+  - Cada página va precedida de `<!-- pagina: N -->` con la **página impresa**
+    (= página PDF − desfase; en este libro, desfase 2). Las citas usan esa página.
+  - El conversor no limpia; la limpieza del Markdown se hace en el loader.
 - **Chunking**: función propia de tamaño fijo con overlap. NO usar el chunker de
   Docling.
 - **LLM y embeddings**: Google Gemini API, tier gratuito, misma API key.
@@ -46,7 +53,11 @@ Plazo: 1 semana. Idioma de código, comentarios y borradores técnicos: **españ
   (API de pago) solo como comparación opcional, nunca como motor principal.
 - **Claves** en `.env` (GEMINI_API_KEY, GROQ_API_KEY, ANTHROPIC_API_KEY), con
   `.env.example`.
-- `data/raw/` y `storage/` en `.gitignore` (PDFs con copyright).
+- `data/raw/`, `data/processed/` y `storage/` en `.gitignore` (copyright).
+
+## Entorno
+- Python 3.11 en `.venv/` (`.venv/Scripts/python.exe`). No usar el Python 3.14
+  del sistema (compatibilidad de PyTorch/Docling).
 
 ## Estructura del proyecto
 ```
@@ -76,6 +87,8 @@ requirements.txt, README.md
 - **Día 7**: margen para imprevistos y revisión.
 
 ## Git / GitHub
-- Repositorio bajo la cuenta **catalinamanzano**.
+- Repositorio público `catamanzanojones/TFM-CATALINA` (cuenta de GitHub
+  **catamanzanojones**; commits con su email noreply, configurado en local).
 - Commitear los cambios con frecuencia a medida que avanza el trabajo.
-- `data/raw/`, `storage/` y `.env` NUNCA se suben (copyright y secretos).
+- `data/raw/`, `data/processed/`, `storage/` y `.env` NUNCA se suben
+  (copyright y secretos).

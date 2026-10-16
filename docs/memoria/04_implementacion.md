@@ -78,9 +78,53 @@ Para las citas se usará la página impresa.
 **Decisión**: Docling supera el punto de control → **no se pivota**, se sigue
 con *Vampiro: La Mascarada*.
 
-### Ingesta (pendiente, tras superar el punto de control)
-- `convert_docling.py`: PDF → Markdown, una sola vez, salida en
-  `data/processed/`, conservando el número de página para las citas.
+### Conversión PDF → Markdown (`src/ingest/convert_docling.py`)
+Convierte todos los PDF de `data/raw/` con Docling y guarda, en
+`data/processed/`, un `.md` y un `.json` por documento. Se ejecuta una sola vez
+(si el `.md` ya existe no se repite, salvo con `--forzar`).
+
+**Parámetros reales**:
+- `do_ocr = False`: el PDF tiene capa de texto; el OCR solo añade tiempo y
+  errores.
+- `do_table_structure = True`: reconstrucción de tablas.
+- `--desfase 2`: diferencia entre la página del PDF y la impresa en este libro
+  (comprobada en las 5 páginas del punto de control).
+
+**Decisiones**:
+- **Se convierte el PDF completo**, no solo los capítulos del corpus. Convertir
+  es caro pero se hace una vez; la selección del corpus se hace después con
+  rangos de páginas en `config.py`. Así se puede reducir o ampliar el corpus
+  sin reconvertir (p. ej. experimento "corpus reducido vs. libro completo").
+- **Marcador de página**: se exporta página a página
+  (`export_to_markdown(page_no=n)`) y cada página va precedida de
+  `<!-- pagina: N -->`, con N = **página impresa** (la que buscaría un lector en
+  el libro). Las páginas sin número impreso (portada) quedan como 0.
+- **El conversor no limpia el texto**: guarda la salida de Docling tal cual. La
+  limpieza va en el loader (una responsabilidad por pieza).
+- **Se guarda también el JSON** de Docling (`save_as_json`): permite regenerar el
+  Markdown con otro formato sin repetir la conversión.
+
+**Resultado**: 404 páginas, 32 tablas, ~1,1 millones de caracteres de Markdown,
+**6,5 minutos** en CPU (sin GPU). Docling avisó de una celda descartada en una
+tabla.
+
+**Validación**:
+- Los marcadores cuadran con las páginas del punto de control (128, 220, 254,
+  298).
+- 63 páginas salen vacías: son ilustraciones a página completa (pypdf tampoco
+  encuentra texto en ellas), incluido el relato ilustrado inicial (págs. 4-31).
+- En las 112 páginas del corpus propuesto, Docling recupera al menos el 85 % de
+  las letras que ve pypdf en 110; las otras 2 (245 y 299) no pierden texto: su
+  final aparece en la página anterior (ver limitación 1).
+
+**Limitaciones conocidas**:
+1. Un párrafo que cruza de página se reconstruye entero y se asigna a la página
+   donde **empieza** (p. ej. el párrafo de Klaus, págs. 150-151, queda en la
+   150). La cita de la parte final puede indicar la página anterior.
+2. Texto incrustado dentro de una ilustración se descarta: se pierden el poema
+   de la pág. 161 (sin reglas) y la cronología de la pág. 57 (fuera del corpus).
+
+### Loader (pendiente)
 - `loader.py`: loader propio que lee los `.md` (y TXT/MD sueltos).
 
 ### Chunking (pendiente)
